@@ -1,11 +1,20 @@
 
+"Hyperparemeter class inpired BY: http://www.davidsbatista.net/blog/2018/02/23/model_optimization/"
+
 import pandas as pd
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.model_selection import GridSearchCV
 from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.pipeline import Pipeline
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay
+from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import roc_curve
+import matplotlib.pyplot as plt
 
 
 def data_loader(folder_path, file_name, dataset_type,  classificator_type='binary', selected_number=6):
@@ -13,6 +22,9 @@ def data_loader(folder_path, file_name, dataset_type,  classificator_type='binar
 
     file_path = folder_path + "/" + file_name
     complete_data = pd.read_csv(file_path)
+    complete_data = complete_data.groupby('label', as_index=False)
+    complete_data = complete_data.apply(lambda x: x.sample(n=500))
+    complete_data = complete_data.reset_index(drop=True)
 
     splitter = StratifiedShuffleSplit(
         n_splits=1, test_size=0.25, random_state=42)
@@ -58,5 +70,84 @@ class DataSelector(BaseEstimator, TransformerMixin):
 
 data_pipeline = Pipeline([
     ('selector', DataSelector()),
-    ('scaler', StandardScaler())
+    ('scaler', MinMaxScaler())
 ])
+
+
+class multiModelSelection():
+    def __init__(self, models, params):
+        self.models = models
+        self.params = params
+        self.model_names = models.keys()
+        self.grid_searches = {}
+
+    def fit(self, X, y, **grid_kwargs):
+        for name in self.model_names:
+            print(f'Gridsearch for {name} model')
+            model = self.models[name]
+            params = self.params[name]
+            grid_search = GridSearchCV(model, params, **grid_kwargs)
+            grid_search.fit(X, y)
+            self.grid_searches[name] = grid_search
+        print('Done.')
+
+    def display_results(self, sort_by='mean_test_score'):
+        df_rows = []
+        for name, grid_search in self.grid_searches.items():
+            df_row = pd.DataFrame(grid_search.cv_results_)
+            removed_columns = [
+                col for col in df_row.columns if 'params_' not in col]
+            df_row = df_row.filter(removed_columns, axis='columns')
+            df_row['Chosen Model'] = len(df_row)*[name]
+            df_rows.append(df_row)
+        final_df = pd.concat(df_rows)
+
+        final_df = final_df.sort_values([sort_by], ascending=False)
+        final_df = final_df.reset_index()
+        final_df = final_df.drop(['rank_test_score', 'index'], 1)
+
+        columns = final_df.columns.tolist()
+        columns.remove('Chosen Model')
+        columns = ['Chosen Model'] + columns
+        final_df = final_df[columns]
+        return final_df
+
+
+class classificationEval():
+    def __init__(self, y_true, y_pred, y_probs):
+        self.y_true = y_true
+        self.y_pred = y_pred
+        self.y_probs = y_probs
+
+    def confusion_matrix(self):
+        return ConfusionMatrixDisplay(confusion_matrix(self.y_true, self.y_pred)).plot()
+
+    def main_metrics(self):
+        precision = precision_score(self.y_true, self.y_pred).round(2)
+        recall = recall_score(self.y_true, self.y_pred).round(2)
+        f1 = f1_score(self.y_true, self.y_pred).round(2)
+        roc = roc_auc_score(self.y_true, self.y_pred).round(2)
+
+        df = pd.DataFrame([[precision, recall, f1, roc]],
+                          columns=['precision', 'recall', 'F1', 'ROC AUC'])
+
+        return df
+
+    def roc_curves(self, inverted=False):
+
+        if(not inverted):
+            fp, tp, th = roc_curve(self.y_true, self.y_probs)
+            plt.figure(figsize=(15, 10))
+            plt.plot(tp, fp, label='label')
+            plt.plot([0, 1], [0, 1])
+            plt.axis([-0.05, 1.05, -0.05, 1.05])
+            plt.xlabel('False Positives')
+            plt.ylabel('True Positives')
+        else:
+            fp, tp, th = roc_curve(self.y_true, self.y_probs)
+            plt.figure(figsize=(15, 10))
+            plt.plot(fp, tp, label='label')
+            plt.plot([0, 1], [0, 1])
+            plt.axis([-0.05, 1.05, -0.05, 1.05])
+            plt.xlabel('False Positives')
+            plt.ylabel('True Positives')

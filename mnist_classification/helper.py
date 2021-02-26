@@ -32,22 +32,25 @@ def data_loader(folder_path, file_name, dataset_type,  classificator_type='binar
     split_indices = splitter.split(complete_data, complete_data['label'])
 
     for train, test in split_indices:
-        train_set = complete_data.loc[train]
-        test_set = complete_data.loc[test]
+        train_set = complete_data.loc[train].copy()
+        test_set = complete_data.loc[test].copy()
+
+    train_set = train_set.reset_index(drop=True)
+    test_set = test_set.reset_index(drop=True)
 
     if(dataset_type == 'train'):
-        x_data = train_set.drop('label', axis='columns').sort_index()
-        y_data = train_set['label'].sort_index()
+        x_data = train_set.drop('label', axis='columns').copy()
+        y_data = train_set['label'].reset_index(drop=True).copy()
 
     else:
-        x_data = test_set.drop('label', axis='columns').sort_index()
-        y_data = test_set['label'].sort_index()
+        x_data = test_set.drop('label', axis='columns').copy()
+        y_data = test_set['label'].reset_index(drop=True).copy()
 
     if(classificator_type == 'binary'):
         y_data = (y_data == selected_number)
         return (x_data, y_data)
 
-    elif(classificator_type == 'multinominal'):
+    elif(classificator_type == 'multiclass'):
         return (x_data, y_data)
 
     elif(classificator_type == 'multilabel'):
@@ -122,11 +125,15 @@ class classificationEval():
     def confusion_matrix(self):
         return ConfusionMatrixDisplay(confusion_matrix(self.y_true, self.y_pred)).plot()
 
-    def main_metrics(self):
-        precision = precision_score(self.y_true, self.y_pred).round(2)
-        recall = recall_score(self.y_true, self.y_pred).round(2)
-        f1 = f1_score(self.y_true, self.y_pred).round(2)
-        roc = roc_auc_score(self.y_true, self.y_pred).round(2)
+    def main_metrics(self, **evalkwargs):
+        precision = precision_score(
+            self.y_true, self.y_pred, **evalkwargs).round(2)
+
+        recall = recall_score(self.y_true, self.y_pred,
+                              **evalkwargs).round(2)
+
+        f1 = f1_score(self.y_true, self.y_pred,  **evalkwargs).round(2)
+        roc = roc_auc_score(self.y_true, self.y_pred, **evalkwargs).round(2)
 
         df = pd.DataFrame([[precision, recall, f1, roc]],
                           columns=['precision', 'recall', 'F1', 'ROC AUC'])
